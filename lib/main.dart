@@ -5,6 +5,7 @@ import 'core/theme/colors.dart';
 import 'core/theme/theme.dart';
 import 'core/theme/typography.dart';
 import 'features/radar/radar_exports.dart';
+import 'features/radar_display/radar_display_exports.dart';
 
 void main() {
   runApp(const XenoSignalApp());
@@ -25,7 +26,7 @@ class XenoSignalApp extends StatelessWidget {
       theme: XenoTheme.green,
       darkTheme: XenoTheme.green, // Always dark
       themeMode: ThemeMode.dark,
-      home: const ThemeDemoScreen(),
+      home: const RadarScreen(),
     );
   }
 }
