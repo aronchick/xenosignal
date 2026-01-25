@@ -7,6 +7,8 @@ import '../../../core/effects/crt_effect.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/theme/typography.dart';
+import '../../audio_haptics/audio_haptics_exports.dart';
+import '../../signal_tracking/signal_tracking_exports.dart';
 import '../data/compass_service.dart';
 import 'radar_painter.dart';
 
@@ -29,8 +31,17 @@ class _RadarScreenState extends State<RadarScreen>
   /// Compass service for device heading.
   final CompassService _compass = CompassService();
 
+  /// Signal service for network readings.
+  final SignalService _signalService = SignalService();
+
+  /// Audio and haptic feedback controller.
+  final AudioHapticController _audioHaptic = AudioHapticController();
+
   /// Current compass heading in degrees.
   double _heading = 0;
+
+  /// Current signal quality for display.
+  int _signalQuality = 50;
 
   /// Stream subscriptions.
   StreamSubscription<double>? _headingSubscription;
@@ -44,6 +55,7 @@ class _RadarScreenState extends State<RadarScreen>
     super.initState();
     _initAnimation();
     _initCompass();
+    _initAudioHaptics();
   }
 
   void _initAnimation() {
@@ -65,12 +77,30 @@ class _RadarScreenState extends State<RadarScreen>
     _compass.start();
   }
 
+  Future<void> _initAudioHaptics() async {
+    await _audioHaptic.initialize();
+
+    // Start listening to signal stream
+    final signalStream = _signalService.watchSignals(
+      interval: const Duration(seconds: 2),
+    );
+
+    // Also track signal quality for display
+    signalStream.listen((reading) {
+      setState(() => _signalQuality = reading.qualityScore);
+    });
+
+    _audioHaptic.start(signalStream);
+  }
+
   @override
   void dispose() {
     _sweepController.dispose();
     _headingSubscription?.cancel();
     _statusSubscription?.cancel();
     _compass.dispose();
+    _signalService.dispose();
+    _audioHaptic.dispose();
     super.dispose();
   }
 
@@ -80,6 +110,37 @@ class _RadarScreenState extends State<RadarScreen>
       appBar: AppBar(
         title: const Text('XENOSIGNAL'),
         actions: [
+          // Audio toggle
+          IconButton(
+            icon: Icon(
+              _audioHaptic.settings.audioEnabled
+                  ? Icons.volume_up
+                  : Icons.volume_off,
+            ),
+            onPressed: () async {
+              await _audioHaptic.setAudioEnabled(
+                !_audioHaptic.settings.audioEnabled,
+              );
+              setState(() {});
+            },
+            tooltip: 'Toggle Audio',
+          ),
+          // Haptic toggle
+          IconButton(
+            icon: Icon(
+              _audioHaptic.settings.hapticEnabled
+                  ? Icons.vibration
+                  : Icons.smartphone,
+            ),
+            onPressed: () async {
+              await _audioHaptic.setHapticEnabled(
+                !_audioHaptic.settings.hapticEnabled,
+              );
+              setState(() {});
+            },
+            tooltip: 'Toggle Haptics',
+          ),
+          // CRT toggle
           IconButton(
             icon: Icon(_crtEnabled ? Icons.blur_on : Icons.blur_off),
             onPressed: () => setState(() => _crtEnabled = !_crtEnabled),
@@ -120,6 +181,8 @@ class _RadarScreenState extends State<RadarScreen>
       child: Row(
         children: [
           _buildStatusIndicator(),
+          const SizedBox(width: XenoTheme.spacing2x),
+          _buildSignalIndicator(),
           const Spacer(),
           Text(
             'SWEEP: 3.0s',
@@ -128,6 +191,47 @@ class _RadarScreenState extends State<RadarScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildSignalIndicator() {
+    final label = _getSignalLabel(_signalQuality);
+    final color = _getSignalColor(_signalQuality);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.5),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: XenoTheme.spacing1x),
+        Text('$_signalQuality% $label', style: XenoTypography.caption()),
+      ],
+    );
+  }
+
+  String _getSignalLabel(int quality) {
+    if (quality > 80) return 'CRITICAL HIT';
+    if (quality > 60) return 'FULLY LEVELED';
+    if (quality > 40) return 'LOW HP';
+    return 'GAME OVER';
+  }
+
+  Color _getSignalColor(int quality) {
+    if (quality > 80) return XenoColors.primaryGreen;
+    if (quality > 60) return XenoColors.classicGreen;
+    if (quality > 40) return XenoColors.amber;
+    return XenoColors.danger;
   }
 
   Widget _buildStatusIndicator() {
