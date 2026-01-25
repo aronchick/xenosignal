@@ -10,11 +10,12 @@ void main() {
     // Verify that the app title is displayed.
     expect(find.text('XENOSIGNAL'), findsOneWidget);
 
-    // Verify theme demo sections are present.
-    expect(find.text('TYPOGRAPHY'), findsOneWidget);
-    expect(find.text('COLOR PALETTE'), findsOneWidget);
-    expect(find.text('SIGNAL STRENGTH'), findsOneWidget);
-    expect(find.text('CONTROLS'), findsOneWidget);
-    expect(find.text('DISPLAY SETTINGS'), findsOneWidget);
+    // Verify radar screen elements are present.
+    // The radar screen shows sweep time info.
+    expect(find.text('SWEEP: 3.0s'), findsOneWidget);
+
+    // Heading readout should show cardinal direction.
+    // Initial heading is 0 = North.
+    expect(find.text('N'), findsOneWidget);
   });
 }
