@@ -41,6 +41,12 @@ dependencies:
   # Device compass for heading data
   flutter_compass: ^0.8.0
 
+  # Audio playback for Geiger counter clicks and alerts
+  audioplayers: ^6.1.0
+
+  # Haptic feedback for tactile pulses
+  vibration: ^2.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
