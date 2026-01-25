@@ -38,6 +38,9 @@ dependencies:
   # Google Fonts for VT323 and Share Tech Mono (retro terminal fonts)
   google_fonts: ^6.2.1
 
+  # Device compass for heading data
+  flutter_compass: ^0.8.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
