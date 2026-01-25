@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
+import '../domain/signal_blip.dart';
 
 /// Configuration for radar visual appearance.
 class RadarTheme {
@@ -58,6 +59,7 @@ class RadarTheme {
 /// Renders:
 /// - Background grid with concentric circles and crosshairs
 /// - Animated sweep line with glow effect
+/// - Signal blips with intensity-based size and fade
 /// - Center reticle
 ///
 /// The sweep animates clockwise from the top (12 o'clock position).
@@ -65,6 +67,8 @@ class RadarPainter extends CustomPainter {
   RadarPainter({
     required this.sweepAngle,
     this.theme = const RadarTheme(),
+    this.blips = const [],
+    this.sweepCount = 0,
   });
 
   /// Current sweep angle in radians (0 = top, clockwise).
@@ -73,6 +77,12 @@ class RadarPainter extends CustomPainter {
   /// Visual configuration.
   final RadarTheme theme;
 
+  /// Signal blips to render on the radar.
+  final List<SignalBlip> blips;
+
+  /// Current sweep count for calculating blip fade.
+  final int sweepCount;
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -80,6 +90,7 @@ class RadarPainter extends CustomPainter {
 
     _drawGrid(canvas, center, radius);
     _drawSweepLine(canvas, center, radius);
+    _drawBlips(canvas, center, radius);
     _drawCenterReticle(canvas, center, radius);
   }
 
@@ -204,6 +215,63 @@ class RadarPainter extends CustomPainter {
     }
   }
 
+  /// Draws all signal blips on the radar.
+  void _drawBlips(Canvas canvas, Offset center, double radius) {
+    for (final blip in blips) {
+      if (!blip.isVisible(sweepCount)) continue;
+
+      final effectiveIntensity = blip.effectiveIntensity(sweepCount);
+      final blipRadius = blip.calculateRadius(radius);
+
+      // Calculate blip position
+      final Offset blipCenter;
+      if (blip.isCurrentSignal) {
+        // Current signal blip at center
+        blipCenter = center;
+      } else {
+        // Directional blip at angle/distance
+        final angle = blip.angle! - math.pi / 2; // Adjust for canvas coords
+        final distance = blip.distance! * radius * 0.85; // Stay inside grid
+        blipCenter = Offset(
+          center.dx + math.cos(angle) * distance,
+          center.dy + math.sin(angle) * distance,
+        );
+      }
+
+      _drawSingleBlip(canvas, blipCenter, blipRadius, effectiveIntensity);
+    }
+  }
+
+  /// Draws a single blip with glow effect.
+  void _drawSingleBlip(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    double intensity,
+  ) {
+    // Outer glow
+    final glowPaint = Paint()
+      ..color = theme.primaryColor.withValues(alpha: intensity * 0.4)
+      ..style = PaintingStyle.fill
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.8);
+
+    canvas.drawCircle(center, radius * 1.5, glowPaint);
+
+    // Main blip body
+    final bodyPaint = Paint()
+      ..color = theme.primaryColor.withValues(alpha: intensity * 0.8)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(center, radius, bodyPaint);
+
+    // Bright center core
+    final corePaint = Paint()
+      ..color = theme.primaryColor.withValues(alpha: intensity)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(center, radius * 0.5, corePaint);
+  }
+
   /// Draws the center reticle/crosshair.
   void _drawCenterReticle(Canvas canvas, Offset center, double radius) {
     final reticleSize = radius * 0.08;
@@ -258,6 +326,18 @@ class RadarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(RadarPainter oldDelegate) {
-    return oldDelegate.sweepAngle != sweepAngle || oldDelegate.theme != theme;
+    return oldDelegate.sweepAngle != sweepAngle ||
+        oldDelegate.theme != theme ||
+        oldDelegate.sweepCount != sweepCount ||
+        !_blipsEqual(oldDelegate.blips, blips);
+  }
+
+  /// Compares two blip lists for equality.
+  bool _blipsEqual(List<SignalBlip> a, List<SignalBlip> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 }

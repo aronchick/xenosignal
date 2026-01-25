@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../domain/signal_blip.dart';
 import 'radar_painter.dart';
 
 /// Animated radar display widget.
@@ -23,6 +24,7 @@ class RadarWidget extends StatefulWidget {
     this.sweepDuration = const Duration(seconds: 3),
     this.theme = const RadarTheme(),
     this.running = true,
+    this.blips = const [],
   });
 
   /// Size of the radar widget. If null, expands to fill available space.
@@ -37,6 +39,9 @@ class RadarWidget extends StatefulWidget {
   /// Whether the sweep animation is running.
   final bool running;
 
+  /// Signal blips to render on the radar.
+  final List<SignalBlip> blips;
+
   @override
   State<RadarWidget> createState() => _RadarWidgetState();
 }
@@ -44,6 +49,7 @@ class RadarWidget extends StatefulWidget {
 class _RadarWidgetState extends State<RadarWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  int _sweepCount = 0;
 
   @override
   void initState() {
@@ -53,8 +59,17 @@ class _RadarWidgetState extends State<RadarWidget>
       duration: widget.sweepDuration,
     );
 
+    // Track sweep completions for blip fade
+    _controller.addStatusListener(_onAnimationStatus);
+
     if (widget.running) {
       _controller.repeat();
+    }
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _sweepCount++;
     }
   }
 
@@ -79,6 +94,7 @@ class _RadarWidgetState extends State<RadarWidget>
 
   @override
   void dispose() {
+    _controller.removeStatusListener(_onAnimationStatus);
     _controller.dispose();
     super.dispose();
   }
@@ -92,6 +108,8 @@ class _RadarWidgetState extends State<RadarWidget>
           painter: RadarPainter(
             sweepAngle: _controller.value * 2 * math.pi,
             theme: widget.theme,
+            blips: widget.blips,
+            sweepCount: _sweepCount,
           ),
           size: widget.size != null ? Size.square(widget.size!) : Size.infinite,
         );
@@ -120,6 +138,8 @@ class ControlledRadarWidget extends StatelessWidget {
     required this.sweepAngle,
     this.size,
     this.theme = const RadarTheme(),
+    this.blips = const [],
+    this.sweepCount = 0,
   });
 
   /// Current sweep angle in radians (0 = top, clockwise).
@@ -131,12 +151,20 @@ class ControlledRadarWidget extends StatelessWidget {
   /// Visual theme configuration.
   final RadarTheme theme;
 
+  /// Signal blips to render on the radar.
+  final List<SignalBlip> blips;
+
+  /// Current sweep count for calculating blip fade.
+  final int sweepCount;
+
   @override
   Widget build(BuildContext context) {
     Widget radar = CustomPaint(
       painter: RadarPainter(
         sweepAngle: sweepAngle,
         theme: theme,
+        blips: blips,
+        sweepCount: sweepCount,
       ),
       size: size != null ? Size.square(size!) : Size.infinite,
     );
