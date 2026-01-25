@@ -4,6 +4,7 @@ import 'core/effects/crt_effect.dart';
 import 'core/theme/colors.dart';
 import 'core/theme/theme.dart';
 import 'core/theme/typography.dart';
+import 'features/radar/radar_exports.dart';
 
 void main() {
   runApp(const XenoSignalApp());
@@ -58,6 +59,22 @@ class _ThemeDemoScreenState extends State<ThemeDemoScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Radar demo
+                _buildSection(
+                  'RADAR DISPLAY',
+                  const SizedBox(
+                    height: 280,
+                    child: Center(
+                      child: RadarWidget(
+                        size: 260,
+                        sweepDuration: Duration(seconds: 3),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: XenoTheme.spacing3x),
+
                 // Typography demo
                 _buildSection(
                   'TYPOGRAPHY',
