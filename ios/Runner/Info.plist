@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Location permission required for WiFi network info on iOS 14+ -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>XenoSignal uses location to access WiFi network information and record signal strength at your position.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>XenoSignal uses background location to continuously track signal strength and build your personal signal map.</string>
 </dict>
 </plist>
