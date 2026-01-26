@@ -4,14 +4,21 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/colors.dart';
+import '../../heatmap_history/domain/heatmap_point.dart';
+import '../../signal_tracking/domain/signal_reading.dart';
 
-/// CustomPainter for the radar display.
+/// CustomPainter for the radar display with heatmap overlay.
 ///
 /// Renders the M314 Motion Tracker-inspired radar with:
 /// - Concentric circle grid for distance reference
 /// - Crosshair lines (N/S/E/W)
+/// - Heatmap blips with temporal aging (fading over 1 hour)
 /// - Animated sweep line with fade trail
 /// - Center reticle
+///
+/// Heatmap blips fade based on age:
+/// - Fresh (0-60 min): Full brightness → fading
+/// - Historical (>60 min): Dim "ghost" indicating past good signal
 ///
 /// Performance optimized for 60fps with minimal allocations in paint().
 class RadarPainter extends CustomPainter {
@@ -27,6 +34,15 @@ class RadarPainter extends CustomPainter {
   /// Number of concentric circles to draw.
   final int ringCount;
 
+  /// Heatmap points to render as blips.
+  final List<HeatmapPoint> heatmapPoints;
+
+  /// Current device position for relative blip positioning.
+  final GeoPosition? currentPosition;
+
+  /// Maximum range shown on radar in meters.
+  final double radarRangeMeters;
+
   // Pre-allocated Paint objects for performance
   late final Paint _gridPaint;
   late final Paint _sweepPaint;
@@ -39,6 +55,9 @@ class RadarPainter extends CustomPainter {
     this.compassHeading = 0,
     this.primaryColor = XenoColors.primaryGreen,
     this.ringCount = 4,
+    this.heatmapPoints = const [],
+    this.currentPosition,
+    this.radarRangeMeters = 200.0,
   }) {
     _initPaints();
   }
@@ -72,10 +91,11 @@ class RadarPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 8;
 
-    // Draw in order: background, grid, sweep trail, sweep line, reticle
+    // Draw in order: background, grid, heatmap, sweep trail, sweep line, reticle
     _drawBackground(canvas, center, radius);
     _drawGridRings(canvas, center, radius);
     _drawCrossHairs(canvas, center, radius);
+    _drawHeatmapBlips(canvas, center, radius); // Heatmap under sweep
     _drawSweepTrail(canvas, center, radius);
     _drawSweepLine(canvas, center, radius);
     _drawCenterReticle(canvas, center);
@@ -142,6 +162,139 @@ class RadarPainter extends CustomPainter {
       Offset(center.dx - diagonalOffset, center.dy + diagonalOffset),
       diagonalPaint,
     );
+  }
+
+  /// Draws heatmap blips with temporal aging.
+  ///
+  /// Blips are rendered with:
+  /// - Brightness based on signal quality (0-100)
+  /// - Opacity based on age (fading over 1 hour)
+  /// - Historical points as dim "ghosts"
+  void _drawHeatmapBlips(Canvas canvas, Offset center, double radius) {
+    if (heatmapPoints.isEmpty || currentPosition == null) return;
+
+    // Clip to radar circle
+    canvas.save();
+    canvas.clipPath(
+        Path()..addOval(Rect.fromCircle(center: center, radius: radius)));
+
+    // Sort: historical first (underneath), then fresh (on top)
+    final sorted = [...heatmapPoints]
+      ..sort((a, b) => a.isHistorical == b.isHistorical
+          ? 0
+          : a.isHistorical
+              ? -1
+              : 1);
+
+    for (final blip in sorted) {
+      _drawSingleBlip(canvas, center, radius, blip);
+    }
+
+    canvas.restore();
+  }
+
+  /// Draws a single heatmap blip.
+  void _drawSingleBlip(
+      Canvas canvas, Offset center, double radius, HeatmapPoint blip) {
+    // Calculate position relative to current location
+    final distance =
+        HeatmapPoint.distanceBetween(currentPosition!, blip.position);
+    final normalizedDistance = (distance / radarRangeMeters).clamp(0.0, 1.0);
+
+    // Skip blips outside radar range
+    if (normalizedDistance >= 1.0) return;
+
+    // Calculate bearing from current position to blip
+    final bearing =
+        HeatmapPoint.bearingBetween(currentPosition!, blip.position);
+
+    // Adjust for compass heading and canvas coordinates
+    // Canvas: 0° = right (3 o'clock), increases counterclockwise
+    // Bearing: 0° = north (12 o'clock), increases clockwise
+    // We subtract π/2 to rotate from "right" to "up"
+    final adjustedAngle = bearing - compassHeading - math.pi / 2;
+
+    // Calculate pixel position on radar
+    final blipX =
+        center.dx + (radius * normalizedDistance) * math.cos(adjustedAngle);
+    final blipY =
+        center.dy + (radius * normalizedDistance) * math.sin(adjustedAngle);
+    final blipPos = Offset(blipX, blipY);
+
+    // Get visual properties based on age and quality
+    final blipColor = _getBlipColor(blip);
+    final blipSize = _getBlipSize(blip);
+    final alpha = blip.temporalAlpha;
+
+    // Draw blip glow (for fresh, high-alpha blips)
+    if (blip.isFresh && alpha > 0.5) {
+      final glowPaint = Paint()
+        ..color = blipColor.withValues(alpha: alpha * 0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      canvas.drawCircle(blipPos, blipSize * 2, glowPaint);
+    }
+
+    // Draw blip core
+    final corePaint = Paint()
+      ..color = blipColor.withValues(alpha: alpha)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(blipPos, blipSize, corePaint);
+
+    // Draw ring for manual pins
+    if (blip.isManualPin) {
+      final ringPaint = Paint()
+        ..color = blipColor.withValues(alpha: alpha * 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(blipPos, blipSize + 3, ringPaint);
+    }
+
+    // Draw quality indicator (pulsing effect for high quality fresh blips)
+    if (blip.qualityScore > 80 && blip.isFresh) {
+      final pulsePaint = Paint()
+        ..color = blipColor.withValues(alpha: alpha * 0.15)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(blipPos, blipSize * 3, pulsePaint);
+    }
+  }
+
+  /// Gets the blip color based on quality and age.
+  Color _getBlipColor(HeatmapPoint blip) {
+    if (blip.isHistorical) {
+      // Historical blips: dim version based on quality
+      // Good historical spots are slightly brighter (light green "memory")
+      final brightness = 0.2 + (blip.qualityScore / 100) * 0.15;
+      return Color.lerp(
+        XenoColors.background,
+        primaryColor,
+        brightness,
+      )!;
+    }
+
+    // Fresh blips: full color based on quality
+    if (blip.qualityScore > 80) {
+      return primaryColor; // Full brightness - "CRITICAL HIT"
+    } else if (blip.qualityScore > 60) {
+      return Color.lerp(primaryColor, XenoColors.classicGreen, 0.3)!;
+    } else if (blip.qualityScore > 40) {
+      return Color.lerp(primaryColor, XenoColors.amber, 0.4)!;
+    } else {
+      return XenoColors.amber.withValues(alpha: 0.7); // Poor signal
+    }
+  }
+
+  /// Gets the blip size based on quality and type.
+  double _getBlipSize(HeatmapPoint blip) {
+    // Manual pins are larger
+    final baseSize = blip.isManualPin ? 6.0 : 4.0;
+
+    // Historical blips are smaller
+    if (blip.isHistorical) {
+      return baseSize * 0.7;
+    }
+
+    // Quality affects size slightly
+    return baseSize + (blip.qualityScore / 100) * 2;
   }
 
   /// Draws the fading sweep trail behind the sweep line.
@@ -228,8 +381,11 @@ class RadarPainter extends CustomPainter {
   @override
   bool shouldRepaint(RadarPainter oldDelegate) {
     // Repaint when sweep angle changes (every frame during animation)
+    // or when heatmap data changes
     return sweepAngle != oldDelegate.sweepAngle ||
         compassHeading != oldDelegate.compassHeading ||
-        primaryColor != oldDelegate.primaryColor;
+        primaryColor != oldDelegate.primaryColor ||
+        heatmapPoints != oldDelegate.heatmapPoints ||
+        currentPosition != oldDelegate.currentPosition;
   }
 }

@@ -11,11 +11,15 @@ void main() {
     expect(find.text('XENOSIGNAL'), findsOneWidget);
 
     // Verify radar screen elements are present.
-    // The radar screen shows sweep time info.
-    expect(find.text('SWEEP: 3.0s'), findsOneWidget);
+    // The radar screen shows blip count in status bar.
+    expect(find.textContaining('BLIPS:'), findsOneWidget);
 
     // Heading readout should show cardinal direction.
     // Initial heading is 0 = North.
     expect(find.text('N'), findsOneWidget);
+
+    // Heatmap legend should be visible.
+    expect(find.text('FRESH'), findsOneWidget);
+    expect(find.text('HISTORICAL'), findsOneWidget);
   });
 }
