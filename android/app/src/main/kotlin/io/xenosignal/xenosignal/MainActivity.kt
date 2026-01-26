@@ -1,12 +1,19 @@
 package io.xenosignal.xenosignal
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.telephony.CellInfoLte
+import android.telephony.CellInfoNr
+import android.telephony.CellInfoWcdma
+import android.telephony.CellInfoGsm
+import android.telephony.CellInfoCdma
 import android.telephony.TelephonyManager
-import android.telephony.SignalStrength
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -64,20 +71,59 @@ class MainActivity : FlutterActivity() {
         val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             ?: return null
 
-        // Note: Getting actual signal strength requires READ_PHONE_STATE permission
-        // and a SignalStrengthCallback. This is a placeholder structure.
-        // Full implementation would use TelephonyCallback on API 31+.
-
         val networkType = getNetworkTypeName(telephonyManager)
+        var dbm: Double? = null
 
-        // Return structure for now - actual dBm requires permission and callback
+        // Try to get signal strength if we have permission
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            dbm = getCellularDbm(telephonyManager)
+        }
+
         return mapOf(
-            "dbm" to null, // Requires SignalStrength callback
+            "dbm" to dbm,
             "networkName" to telephonyManager.networkOperatorName,
             "connectionType" to networkType,
             "latencyMs" to null,
             "location" to null
         )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getCellularDbm(telephonyManager: TelephonyManager): Double? {
+        try {
+            val cellInfoList = telephonyManager.allCellInfo ?: return null
+
+            // Find the registered (active) cell and get its signal strength
+            for (cellInfo in cellInfoList) {
+                if (!cellInfo.isRegistered) continue
+
+                val dbm = when (cellInfo) {
+                    is CellInfoLte -> cellInfo.cellSignalStrength.dbm
+                    is CellInfoWcdma -> cellInfo.cellSignalStrength.dbm
+                    is CellInfoGsm -> cellInfo.cellSignalStrength.dbm
+                    is CellInfoCdma -> cellInfo.cellSignalStrength.dbm
+                    else -> {
+                        // Handle 5G NR on API 29+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && cellInfo is CellInfoNr) {
+                            (cellInfo.cellSignalStrength as? android.telephony.CellSignalStrengthNr)?.dbm
+                        } else {
+                            null
+                        }
+                    }
+                }
+
+                // Return first valid reading from registered cell
+                if (dbm != null && dbm != Int.MAX_VALUE && dbm != Int.MIN_VALUE) {
+                    return dbm.toDouble()
+                }
+            }
+        } catch (e: SecurityException) {
+            // Permission not granted at runtime
+            return null
+        }
+        return null
     }
 
     @Suppress("DEPRECATION")
