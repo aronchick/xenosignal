@@ -146,9 +146,14 @@ import SystemConfiguration.CaptiveNetwork
     private func radioAccessToString(_ technology: String?) -> String {
         guard let tech = technology else { return "Unknown" }
 
+        // Check 5G types (iOS 14.1+)
+        if #available(iOS 14.1, *) {
+            if tech == CTRadioAccessTechnologyNRNSA || tech == CTRadioAccessTechnologyNR {
+                return "5G"
+            }
+        }
+
         switch tech {
-        case CTRadioAccessTechnologyNRNSA, CTRadioAccessTechnologyNR:
-            return "5G"
         case CTRadioAccessTechnologyLTE:
             return "LTE"
         case CTRadioAccessTechnologyeHRPD,
